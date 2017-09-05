@@ -41,13 +41,20 @@ rule runBlast:
 rule iterationFindBest:
   input:
     res   = lambda wildcards: expand("%s/blastres.{genome}.tsv" % (__OUTDIR__), genome=sorted(config["prots"].keys())),
-    prots = [ config["prots"][genome] for genome in sorted(config["prots"].keys()) ]
+    prots = [ config["prots"][genome] for genome in sorted(config["prots"].keys()) ],
+    matchedList = config["matchedList"]
   output:
     fas = "%s/newOrthologs.fasta" % (__OUTDIR__)
   run:
+    mlOrig = utils.readColumnFile(input.matchedList, "queryName iteration queryMatched genome gene")
+    ml = { genome : set([ g.gene for g in group ]) for (genome, group) in utils.indexListBy(mlOrig, key=lambda x: x.genome).items() }
+    
+
     F = utils.loadFasta(config["queries"])
+    newml = []
     for (genome, resFile, protFile) in zip(sorted(config["blastdbs"].keys()), input.res, input.prots):
       bRes = butils.readBlastFile(resFile, butils.blastfields)
+      bRes = [ h for h in bRes if (genome not in ml) or (h.sseqid not in ml[genome]) ]
 
       if len(bRes) == 0:
         continue
@@ -58,9 +65,16 @@ rule iterationFindBest:
       #Initially just take the best hit, if there is any
       best = butils.bestHit(bRes)
       F["%s:%s" % (genome, best.sseqid)] = prots[best.sseqid]
+      newml.append( (best.qseqid, genome, best.sseqid) )
     #efor
-    print(F)
     utils.writeFasta(F.items(), output.fas)
+
+    with open(input.matchedList, "a") as ofd:
+      for (queryMatched, genome, gene) in newml:
+        ofd.write("%s\t%d\t%s\t%s\t%s\n" % (config["queryName"], config["iteration"], queryMatched, genome, gene))
+
+    
+
 
 ###############################################################################
 
