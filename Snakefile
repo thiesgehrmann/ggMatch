@@ -101,9 +101,12 @@ rule genNoGenomeProts:
     files = [ dconfig["queries"][query] for query in dconfig["queries"].keys() ]
   output:
     noGenomeProts = dconfig["genomes"]["NoGenome"]["prots"]
-  shell: """
-    cat {input.files} > {output.noGenomeProts}
-  """
+  run:
+    F = {}
+    for f in input.files:
+      F.update(utils.loadFasta(f))
+    #efor
+    utils.writeFasta(F.items(), output.noGenomeProts)
 
 rule initIteration0:
   input:
