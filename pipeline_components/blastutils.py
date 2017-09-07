@@ -8,8 +8,13 @@ from collections import namedtuple
 
 ###############################################################################
 
+###############################################################################
+
+diamondfields= "qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore"
+diamondfields_type = "str str float int int int int int int int float float"
 blastfields = "qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore slen qlen"
 blastfields_type = "str str float int int int int int int int float float int int"
+blastfields_positive = blastfields + ' positive'
 augmentedblastfields = "qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore slen qlen K"
 augmentedblastfields_type = "str str float int int int int int int int float float int int float"
 genomicblastfields = "qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore slen qlen K g1chr g1start g1end g2chr g2start g2end"
@@ -55,6 +60,7 @@ class BlastHitType(object):
                 "bitscore": lambda x: float(x),
                 "slen": lambda x: int(x),
                 "qlen": lambda x: int(x),
+                "positive" : lambda x: int(x),
                 "K": lambda x: float(x),  # AUGMENTED
                 "g1chr": lambda x: str(x), # GENOMIC
                 "g1start" : lambda x: int(x), #GENOMIC
@@ -96,16 +102,40 @@ def readBlastFile(filename, fields=blastfields):
 
 ###############################################################################
 
+# For some reason, I can't import utils here, so I need to copy the code...
+def indexListBy(L, key=lambda x: x[0]):
+  G = {}
+  for item in L:
+    k = key(item)
+    if k not in G:
+      G[k] = []
+    #fi
+    G[k].append(item)
+  #efor
+  return G
+#edef
+
+
 def bestHit(blastResList):
-  best = ""
+  best = None
 
   for hit in blastResList:
-    if (best == "") or (hit["bitscore"] < best["bitscore"]):
+    if best is None:
+      best = hit
+    elif (hit.bitscore > best.bitscore):
       best = hit
     #fi
   #efor
 
   return best
+#edef
+
+def bestHitMajVote(blastResList):
+  bResGrouped = indexListBy(blastResList, lambda x: x.sseqid)
+
+  maj = max(bResGrouped.keys(), key=lambda x: len(bResGrouped[x]))
+
+  return max(bResGrouped[maj], key=lambda x: x.bitscore)
 #edef
 
 ###############################################################################
@@ -186,3 +216,17 @@ def bestHitPerSequence(hits, func=lambda hit: hit.bitscore):
   return bestHit
 #edef
 
+def bestHitPerQuery(hits, func=lambda hit: hit.bitscore):
+  bestHit = {}
+
+  for hit in hits:
+    if hit.qseqid not in bestHit:
+      bestHit[hit.qseqid] = hit
+    else:
+      if func(hit) > func(bestHit[hit.qseqid]):
+        bestHit[hit.qseqid] = hit
+      #fi
+    #else
+  #efor
+
+  return bestHit

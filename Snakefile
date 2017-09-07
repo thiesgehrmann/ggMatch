@@ -21,7 +21,16 @@ __RUN_DIR__ = os.path.abspath(dconfig["outdir"]) + "/run"
 __BLASTDB_OUTDIR__ = "%s/blastdb" % __RUN_DIR__
 __ITERATION_OUTDIR__ = "%s/iterations" % __RUN_DIR__
 __FINAL_OUTDIR__ = "%s/final"% __RUN_DIR__
-__DOT_OUTDIR__ = "%s/dot" % __RUN_DIR__
+__GRAPH_OUTDIR__ = "%s/graph" % __RUN_DIR__
+__CLUSTALO_OUTDIR__ = "%s/alignment" % __RUN_DIR__
+__COMPARE_OUTPUT__ = "%s/compare" % __RUN_DIR__
+
+###############################################################################
+
+noGenomeProts = "%s/noGenome.prots.fasta" % __ITERATION_OUTDIR__
+
+dconfig["genomes"]["NoGenome"] = {"prots" : noGenomeProts }
+
 ###############################################################################
 
 rule makeBlastDB:
@@ -31,7 +40,8 @@ rule makeBlastDB:
     db = "%s/{genome}.blastdb" % __BLASTDB_OUTDIR__
   conda: "%s/conda.yaml" % __PC_DIR__
   shell: """
-    makeblastdb -dbtype prot -in {input.proteins} -out {output.db}
+    #makeblastdb -dbtype prot -in {input.proteins} -out {output.db}
+    diamond makedb --in {input.proteins} -d {output.db}
     touch {output.db}
   """
 
@@ -71,26 +81,53 @@ rule genIterationJSON:
 
     C = { "blastdbs" : { genome: "%s/%s.blastdb" % (__BLASTDB_OUTDIR__, genome) for genome in sorted(dconfig["genomes"].keys()) if genome not in speciesPresent  },
           "prots" : { genome: config["genomes"][genome]["prots"] for genome in sorted(dconfig["genomes"].keys()) if genome not in speciesPresent},
+          "allblastdbs" : { genome: "%s/%s.blastdb" % (__BLASTDB_OUTDIR__, genome) for genome in sorted(dconfig["genomes"].keys())  },
+          "allprots" : { genome: config["genomes"][genome]["prots"] for genome in sorted(dconfig["genomes"].keys()) },
           "queryName" : wildcards.query,
           "iteration" : int(wildcards.iteration),
           "queries" : input.queries,
+          "reciprocalDir" : "%s/reciprocalBlasts" % __ITERATION_OUTDIR__,
           "outdir" : "%s/%s/iteration_%d.run" % ( __ITERATION_OUTDIR__, query, iteration),
           "final" : "%s/%s/iteration_%d.fasta" % ( __ITERATION_OUTDIR__, query, iteration),
           "matchedList" : "%s/allMatched.tsv" % (__ITERATION_OUTDIR__),
-          "needNext" : needNext }
+          "evalue" : dconfig["evalue"],
+          "needNext" : needNext,
+          "pcDir" : __PC_DIR__ }
     with open(output.json, "w") as ofd:
       ofd.write(json.dumps(C, indent=4))
 
+rule genNoGenomeProts:
+  input:
+    files = [ dconfig["queries"][query] for query in dconfig["queries"].keys() ]
+  output:
+    noGenomeProts = dconfig["genomes"]["NoGenome"]["prots"]
+  shell: """
+    cat {input.files} > {output.noGenomeProts}
+  """
+
 rule initIteration0:
   input:
-    query = lambda wildcards: dconfig["queries"][wildcards.query]
+    query = lambda wildcards: dconfig["queries"][wildcards.query],
+    noGenomeProts = rules.genNoGenomeProts.output.noGenomeProts
   output:
     query = "%s/{query}/iteration_0.fasta" % (__ITERATION_OUTDIR__)
-  shell: """
-     cat "{input.query}" \
-      | sed -e 's/^>/>__INPUTQUERY__:/' \
-      > "{output.query}"
-  """
+  run:
+    F  = utils.loadFasta(input.query)
+    NF = {}
+    for ident in F:
+      genome = ident.split(':')[0]
+      if genome not in dconfig["genomes"]:
+        NF["NoGenome:%s" % ident] = F[ident]
+      else:
+        NF[ident] = F[ident]
+      #fi
+    #efor
+    utils.writeFasta(NF.items(), output.query)
+
+    with open("%s/allMatched.tsv" % __ITERATION_OUTDIR__, "a+") as ofd:
+      for seed in NF:
+        ofd.write("%s\t%d\tQUERY:%s\t%s\t%d\n" % (wildcards.query, 0, wildcards.query, seed, 1))
+      
 
 rule runIteration:
   input:
@@ -114,7 +151,7 @@ rule runIteration:
     if [ "$need_next" == "false" ]; then
       ln -s "{input.prevQuery}" "{output.nextQuery}"
     else
-      {params.pc_dir}/run_iteration.sh {input.json} {threads} &> /dev/null
+      {params.pc_dir}/run_iteration.sh {input.json} {threads}
     fi
   """
     
@@ -138,102 +175,142 @@ rule final:
 
 ###############################################################################
 
-rule matchedListToDot:
+rule matchedListToGraph:
   input:
     files = rules.final.input.final
   output:
-    dot = "%s/matchedList.dot" % __DOT_OUTDIR__
+    nodesCSV = "%s/nodes.csv" % __GRAPH_OUTDIR__,
+    edgesCSV = "%s/edges.csv" % __GRAPH_OUTDIR__
   run:
-    ml = utils.readColumnFile("%s/allMatched.tsv" % __ITERATION_OUTDIR__, "query iteration queryMatch genome gene", types="str int str str str")
+    ml = utils.readColumnFile("%s/allMatched.tsv" % __ITERATION_OUTDIR__, "query iteration origin target keep", types="str int str str int")
 
-    visited = set([])
-    colors = dict(zip(range(0,10), ["gray", "black", "red", "salmon", "brown", "orange", "yellow", "darkgreen", "limegreen", "skyblue" ]))
+    nodes = {}
+    nodeAttr = {}
+    edges = {}
+    nodeIDcounter = 1
+    for match in ml[::-1]:
+      if match.keep == 0:
+        continue
+      #fi
 
-    with open(output.dot, "w") as ofd:
-      ofd.write("digraph G{\n")
-      ofd.write("  subgraph clusteregend{\n")
-      #ofd.write("    node [style=filled, color=white]\n")
-      ofd.write("    style = filled;\n")
-      ofd.write("    color = lightgrey;\n")
-      ofd.write("    label = \"Legend\";\n")
-      for iteration in range(0,10):
-        if iteration == 0:
-          ofd.write("    iteration0 [color=red,peripheries=1];\n")
-        else:
-          ofd.write("    iteration%d [peripheries=%d];\n" % (iteration, iteration))
-        #fi
-      #efor
+      originGenome, originGene = utils.splitgg(match.origin)
+      targetGenome, targetGene = utils.splitgg(match.target)
 
-      for iteration in range(1,10):
-        ofd.write("    iteration%d -> iteration%d;\n" % (iteration-1, iteration))
-      #efor
-      ofd.write("  }\n\n")
+      origin = match.origin
+      target = match.target
+      query = match.query
+      iteration = match.iteration
 
-      nodes = {}
-      nodeAttr = {}
-      edges = {}
-      nodeIDcounter = 1
-      for match in ml:
-        originGenome = match.queryMatch.split(":")[0]
-        originGene   = ':'.join(match.queryMatch.split(":")[1:])
-        targetGenome = match.genome
-        targetGene   = match.gene
+      if query not in nodes:
+        nodes[query] = {}
+        nodeAttr[query] = {}
+        edges[query] = []
+      #fi
+      if origin not in nodes[query]:
+        nodes[query][origin] = "node%d" % nodeIDcounter
+        nodeIDcounter += 1
+        nodeAttr[query][origin] = { "iteration": iteration-1, "label": "\"%s\"" % origin} #=\"%s\"]" % (iteration, origin)
+      #fi
 
-        query = match.query
-        iteration = match.iteration
-        origin = "%s:%s" % (originGenome, originGene)
-        target = "%s:%s" % (targetGenome, targetGene)
+      if target not in nodes[query]:
+        nodes[query][target] = "node%d" % nodeIDcounter
+        nodeIDcounter += 1
+        nodeAttr[query][target] = {"iteration": iteration, "label": "\"%s\"" % target} #"[peripheries=%d,label=\"%s\"]" % (iteration, target)
+      #fi
 
-        print(origin, target)
+      edges[query].append( (origin, target, match.keep))
 
-        if query not in nodes:
-          nodes[query] = {}
-          nodeAttr[query] = {}
-          edges[query] = []
-        #fi
-        if origin not in nodes[query]:
-          nodes[query][origin] = "node%d" % nodeIDcounter
-          nodeIDcounter += 1
-          if iteration == 1:
-            nodeAttr[query][origin] = "[peripheries=1,color=red]"
-          else:
-            nodeAttr[query][origin] = "[peripheries=%d]" % iteration
-          #fi
-        #fi
+    #efor
 
-        if target not in nodes[query]:
-          nodes[query][target] = "node%d" % nodeIDcounter
-          nodeIDcounter += 1
-          nodeAttr[query][target] = "[peripheries=%d]" % iteration
-        #fi
 
-        edges[query].append( (nodes[query][origin], nodes[query][target]))
-
-      #efor
-
+    # Write graph data in csv format, for gephi
+    with open(output.nodesCSV, "w") as ofd:
+      ofd.write("Id,query,label,iteration\n")
       for query in nodes:
-        ofd.write("  subgraph cluster%s {\n" % query)
-        ofd.write("    style = filled;\n")
-        ofd.write("    color = lightgrey;\n")
-        ofd.write("    label = \"%s\";\n" % query)
         for node in nodes[query]:
-          ofd.write("    %s %s;\n" % ( nodes[query][node], nodeAttr[query][node]))
+          ofd.write("%s,%s,%s,%s\n" % (nodes[query][node], query, nodeAttr[query][node]["label"], nodeAttr[query][node]["iteration"]))
         #efor
-        for (origin, target) in edges[query]:
-          ofd.write("    %s -> %s;\n" % (origin, target) )
-        #efor
-        ofd.write("  }\n")
       #efor
+    #ewith
 
-      ofd.write("}")
+    with open(output.edgesCSV, "w") as ofd:
+      ofd.write("source,target,validated\n")
+      for query in edges:
+        for (origin, target, keep) in edges[query]:
+          ofd.write("%s,%s,%d\n" % (nodes[query][origin], nodes[query][target], keep))
+        #efor
+      #efor
+    #ewith
 
-rule matchedDotToPdf:
+###############################################################################
+
+rule alignGroup:
   input:
-    dot = rules.matchedListToDot.output.dot,
+    seqs = lambda wildcards: "%s/%s.fasta" % (__FINAL_OUTDIR__, wildcards.query)
   output:
-    pdf = "%s/matchedList.pdf" % __DOT_OUTDIR__
+    aln = "%s/{query}.aln.msf" % __CLUSTALO_OUTDIR__
   conda: "%s/conda.yaml" % __PC_DIR__
   shell: """
-    dot -Tpdf "{input.dot}" > "{output.pdf}"
+    clustalo -i "{input.seqs}" --threads 1 -o "{output.aln}"
   """
+
+rule alignedPrettyPlot:
+  input:
+    aln = lambda wildcards: "%s/%s.aln" % (__CLUSTALO_OUTDIR__, wildcards.query)
+  output:
+    plot = "%s/{query}.pdf" % __CLUSTALO_OUTDIR__
+  conda: "%s/conda.yaml" % __PC_DIR__
+  shell: """
+    prettyplot 
+  """
+
 ###############################################################################
+
+rule alignToInitial:
+  input:
+    initial = lambda wildcards: dconfig["queries"][wildcards.query],
+    final   = lambda wildcards: "%s/%s.fasta" % (__FINAL_OUTDIR__, wildcards.query)
+  output:
+    res = "%s/blasts/cmp.{query}.tsv" % __COMPARE_OUTPUT__
+  conda: "%s/conda.yaml" % __PC_DIR__
+  threads: 4
+  params:
+    blastfields = butils.blastfields_positive
+  shell: """
+    makeblastdb -dbtype prot -in {input.initial} -out {output.res}.db
+    blastp -query {input.final} -db {output.res}.db -outfmt "6 {params.blastfields}" -out {output.res} -num_threads {threads}
+  """
+
+rule compareToInitial:
+  input:
+    bres = expand("%s/blasts/cmp.{query}.tsv" % __COMPARE_OUTPUT__, query=sorted(dconfig["queries"].keys()))
+  output:
+    cmpTable = "%s/cmpTable.tsv" % __COMPARE_OUTPUT__
+  run:
+    cmps = {}
+    genomes = [ g for g in dconfig["genomes"] if g != "NoGenome" ]
+    for query, bresFile in zip(sorted(dconfig["queries"].keys()), input.bres):
+      cmps[query] = {}
+      bres = utils.indexListBy(butils.readBlastFile(bresFile, butils.blastfields_positive), lambda x: utils.splitgg(x.qseqid)[0])
+      for genome in genomes:
+        if genome not in bres:
+          cmps[query][genome] = -1
+        else:
+          bestHit = butils.bestHit(bres[genome])
+          score = float(bestHit.positive) / float(bestHit.qlen)
+          cmps[query][genome] = int(score * 100)
+        #fi
+      #efor
+    #efor
+
+    with open(output.cmpTable, "w") as ofd:
+      ofd.write("Genome\t%s\n" % "\t".join(sorted(dconfig["queries"].keys())))
+      for genome in genomes:
+        ofd.write("%s\t%s\n" % (genome, "\t".join( "%d" % cmps[query][genome] for query in sorted(dconfig["queries"].keys()))))
+      #efor
+    #ewith
+          
+          
+
+      
+    

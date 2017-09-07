@@ -1,8 +1,8 @@
 { 
- "genomes": { "genome1": { "prots": "example/prots.genome1.fa"},
+ "genomes": { "92_Aspsy1": { "prots": "example/prots.genome1.fa"},
               "genome2": { "prots": "example/prots.genome2.fa"} },
  "queries": { "query1": "example/query1.fasta",
               "query2": "example/query2.fasta",
-              "query3": "example/query1.fasta" },
+              "query3": "example/query3.fasta" },
  "outdir": "example/output"
 } 

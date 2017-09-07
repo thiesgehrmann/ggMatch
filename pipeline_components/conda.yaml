@@ -2,5 +2,6 @@ channels:
  - bioconda
 dependencies:
  - blast
+ - diamond
  - graphviz
  - clustalo
