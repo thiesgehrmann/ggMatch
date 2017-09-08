@@ -35,9 +35,9 @@ The example is defined by the json file in (example/config.json).
 ### Output
 
 The tool outputs three files:
- * *<outdir>/run/compare/cmpTable.tsv* : A matrix of similarity scores to the original query for each species (-1 if absent)
- * *<outdir>/run/graph/nodes.tsv* : A file describing the genes in the discovery network (can be loaded with gephi or cytoscape)
- * *<outdir>/run/graph/edges.tsv* : A file describing the discovery order in the discovery network
+ * *outdir/run/compare/cmpTable.tsv* : A matrix of similarity scores to the original query for each species (-1 if absent)
+ * *outdir/run/graph/nodes.tsv* : A file describing the genes in the discovery network (can be loaded with gephi or cytoscape)
+ * *outdir/run/graph/edges.tsv* : A file describing the discovery order in the discovery network
 
 ### Running your own problem
 
