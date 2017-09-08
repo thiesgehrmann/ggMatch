@@ -59,7 +59,7 @@ For each genome, add the location of the fasta file in the JSON file, indexed by
 
 A query takes the form of a multisequence fasta file.
 A simple query is a single sequence, but if you have pre-existing knowledge of another ortholog, you can provide two sequences in the same sequence file.
-If the genomes from which these queries originate also exist in your genome, you can prefix the sequence description in the fasta file with "<genomeID>:".
+If the genomes from which these queries originate also exist in your genome, you can prefix the sequence description in the fasta file with "genomeID:".
 This will link the query sequence to the genome.
 If that query is identified as a match against any other genome, then the reciprocal blast will be performed against that genome, rather than the set of query sequences.
 
