@@ -27,9 +27,9 @@ __COMPARE_OUTPUT__ = "%s/compare" % __RUN_DIR__
 
 ###############################################################################
 
-noGenomeProts = "%s/noGenome.prots.fasta" % __ITERATION_OUTDIR__
+querySetProts = "%s/querySet.fasta" % __ITERATION_OUTDIR__
 
-dconfig["genomes"]["NoGenome"] = {"prots" : noGenomeProts }
+dconfig["genomes"][dconfig["querySetName"]] = {"prots" : querySetProts }
 
 ###############################################################################
 
@@ -90,28 +90,16 @@ rule genIterationJSON:
           "outdir" : "%s/%s/iteration_%d.run" % ( __ITERATION_OUTDIR__, query, iteration),
           "final" : "%s/%s/iteration_%d.fasta" % ( __ITERATION_OUTDIR__, query, iteration),
           "matchedList" : "%s/allMatched.tsv" % (__ITERATION_OUTDIR__),
+          "querySetName" : dconfig["querySetName"],
           "evalue" : dconfig["evalue"],
           "needNext" : needNext,
           "pcDir" : __PC_DIR__ }
     with open(output.json, "w") as ofd:
       ofd.write(json.dumps(C, indent=4))
 
-rule genNoGenomeProts:
-  input:
-    files = [ dconfig["queries"][query] for query in dconfig["queries"].keys() ]
-  output:
-    noGenomeProts = dconfig["genomes"]["NoGenome"]["prots"]
-  run:
-    F = {}
-    for f in input.files:
-      F.update(utils.loadFasta(f))
-    #efor
-    utils.writeFasta(F.items(), output.noGenomeProts)
-
 rule initIteration0:
   input:
-    query = lambda wildcards: dconfig["queries"][wildcards.query],
-    noGenomeProts = rules.genNoGenomeProts.output.noGenomeProts
+    query = lambda wildcards: dconfig["queries"][wildcards.query]
   output:
     query = "%s/{query}/iteration_0.fasta" % (__ITERATION_OUTDIR__)
   run:
@@ -120,7 +108,7 @@ rule initIteration0:
     for ident in F:
       genome = ident.split(':')[0]
       if genome not in dconfig["genomes"]:
-        NF["NoGenome:%s" % ident] = F[ident]
+        NF["%s:%s" % (dconfig["querySetName"], ident)] = F[ident]
       else:
         NF[ident] = F[ident]
       #fi
@@ -130,6 +118,18 @@ rule initIteration0:
     with open("%s/allMatched.tsv" % __ITERATION_OUTDIR__, "a+") as ofd:
       for seed in NF:
         ofd.write("%s\t%d\tQUERY:%s\t%s\t%d\n" % (wildcards.query, 0, wildcards.query, seed, 1))
+
+rule genQuerySetProts:
+  input:
+    files = [ dconfig["queries"][query] for query in dconfig["queries"].keys() ]
+  output:
+    querySetProts = dconfig["genomes"][dconfig["querySetName"]]["prots"]
+  run:
+    F = {}
+    for f in input.files:
+      F.update(utils.loadFasta(f))
+    #efor
+    utils.writeFasta(F.items(), output.querySetProts)
       
 
 rule runIteration:
@@ -291,7 +291,7 @@ rule compareToInitial:
     cmpTable = "%s/cmpTable.tsv" % __COMPARE_OUTPUT__
   run:
     cmps = {}
-    genomes = [ g for g in dconfig["genomes"] if g != "NoGenome" ]
+    genomes = [ g for g in dconfig["genomes"] if g != dconfig["querySetName"] ]
     for query, bresFile in zip(sorted(dconfig["queries"].keys()), input.bres):
       cmps[query] = {}
       bres = utils.indexListBy(butils.readBlastFile(bresFile, butils.blastfields_positive), lambda x: utils.splitgg(x.qseqid)[0])

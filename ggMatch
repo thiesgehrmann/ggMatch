@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+SCRIPTDIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
+
+configfile=""
+threads="10"
+sm_params=""
+
+function usage() {
+
+  echo "ggMatch - Greedy Gene Matching tool"
+  echo ""
+  echo "  ggMatch [options] <configFile>"
+  echo ""
+  echo "Options"
+  echo "  -t <int> : Number of threads to use (default: $threads)"
+  echo "  -s <str> : Additional parameters for snakemake (default: \"\")"
+  echo ""
+  echo " See code at https://github.com/thiesgehrmann/ggMatch"
+
+}
+
+while getopts ":t:s:" opt; do
+  case $opt in
+    t)
+      threads=$OPTARG
+      ;;
+    s)
+      sm_params="$OPTARG"
+      ;;
+    \?)
+      echo "Invalid option: $OPTARG" >&2
+      exit 1
+      ;;
+    :)
+      echo "Missing argument for option $OPTARG"
+      exit 1
+      ;;
+  esac
+done
+
+
+for i in `seq $((OPTIND-1))`; do
+  shift
+done
+
+configfile="$1"
+
+if [ ! -e "$configfile" ]; then
+  echo "Error: configFile missing"
+  usage
+  exit 1
+fi  
+
+snakemake --nolock --use-conda --snakefile "$SCRIPTDIR/Snakefile" --configfile "$configfile" --cores "$threads" matchedListToGraph compareToInitial

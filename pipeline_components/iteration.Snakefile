@@ -38,14 +38,14 @@ rule runBlast:
   conda: "conda.yaml"
   shell: """
     #blastp -query {input.query} -db {input.db} -outfmt "6 {params.blastfields}" -out {output.res} -num_threads 1 -max_target_seqs 1 -evalue {params.evalue}
-    diamond blastp -d {input.db} -q {input.query} -o {output.res} --max-target-seqs 1 --evalue {params.evalue} &> /dev/null
+    diamond blastp -d {input.db} -q {input.query} -o {output.res} --max-target-seqs 1 --evalue {params.evalue}
   """
 
 ###############################################################################
 
 rule iterationFindBest:
   input:
-    res   = lambda wildcards: expand("%s/blastres.{genome}.tsv" % (__OUTDIR__), genome=sorted([ g for g in config["prots"].keys() if g != "NoGenome"])),
+    res   = lambda wildcards: expand("%s/blastres.{genome}.tsv" % (__OUTDIR__), genome=sorted([ g for g in config["prots"].keys() if g != config["querySetName"]])),
     matchedList = config["matchedList"]
   output:
     newMatches = "%s/newMatches.tsv" % (__OUTDIR__)
@@ -116,7 +116,7 @@ rule runReciprocalBlast:
   params:
     pc_dir = config["pcDir"]
   shell: """
-    {params.pc_dir}/run_reciprocal_blast.sh "{input.json}" {threads} &> /dev/null
+    {params.pc_dir}/run_reciprocal_blast.sh "{input.json}" {threads} #&> /dev/null
   """
 
 
