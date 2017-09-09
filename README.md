@@ -40,7 +40,9 @@ The tool outputs three files:
   This score is determined by the number of positive scoring matches in the alignment divided by the length of the query
 
  * *outdir/run/graph/nodes.tsv* : A file describing the genes in the discovery network (can be loaded with gephi or cytoscape)
+
  Format:
+
 Id | query | label | iteration
 -- | ----- | ----- | ---------
 node1 | query3 | "QuerySet:182893" | 0
