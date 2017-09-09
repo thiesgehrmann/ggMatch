@@ -22,8 +22,13 @@ def mkdir_p(path):
 
 def splitgg(gg):
   ggs = gg.split(':')
+
   genome = ggs[0]
   gene   = ":".join(ggs[1:])
+
+  if len(ggs) == 1:
+    return (None, gene)
+  #fi
 
   return (genome, gene)
 

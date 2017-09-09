@@ -1,4 +1,5 @@
 {
   "querySetName" : "QuerySet",
-  "evalue" : "1e-50"
+  "evalue" : "1e-50",
+  "outdir" : "./output"
 }

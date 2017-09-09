@@ -42,16 +42,31 @@ The tool outputs three files:
 ### Running your own problem
 
 Please look at the example JSON file, and the default parameters in (pipeline_components/defaults.json)
+The general format takes this form:
+
+```json
+{
+  "genomes" : {  },
+  "queries" : {  },
+  "outdir" : "./output",
+}
+```
+
+You can modify a number of parameters.
+These can be found in (pipeline_components/defaults.json).
+
+You can validate your configuration file with `ggMatch -v config.json`
 
 #### Adding genomes
 
 A genome is a set of proteins.
 Provide for each genome a multisequence fasta file of protein sequences.
 For each genome, add the location of the fasta file in the JSON file, indexed by a <genomeID>, under the "genomes" heading:
+For example:
 ``` json
 "genomes": {
-  "genomeID" : { "prots" : "<proteins.fasta>" },
-  ...
+  "genome1" : { "prots" : "proteins_genome1.fasta" },
+  "genome2" : { "prots" : "proteins_genome2.fasta" }
 }
 ```
 
@@ -62,4 +77,26 @@ A simple query is a single sequence, but if you have pre-existing knowledge of a
 If the genomes from which these queries originate also exist in your genome, you can prefix the sequence description in the fasta file with "genomeID:".
 This will link the query sequence to the genome.
 If that query is identified as a match against any other genome, then the reciprocal blast will be performed against that genome, rather than the set of query sequences.
+
+For example:
+
+```
+>genome1:gene1
+MPDDVWSGSSTCSLSSDGMSVRKDMKPEFHRAWPRCTAKAMDLEINEKMPHNETTEVAGVTKIKAVEAVG
+GKTGKYIMYAGLAMVMVIYELDNSTVGTYRNFASSDFHQLGKLATLNTAASIITAIFKPPIAKLSDVLGR
+GEAYVVTLTFYILSYILC
+>prot2
+MVAHNFSPRDAQFLTYTNGVSQALMGMGTGLLMYRYRTYKWIGVAGAVIRLVGYGVMVRLRTNESSIAEL
+FIVQLVQGIGSGIIETIIIVAAQISVPHAELAQVTSLVMLGTFLGNGIGSAVAGAIYTNQLRDRLEIHLG
+PGAAEGQLATLYNSITDRLPEWGTAERTAVNQALGDGHNLVQVTPDSSRSDSLDIEKPKARCF
+```
+
+These queries need to be added to the configuration JSON file:
+
+```
+  "queries" : {
+    "query1" : "query_prots.fasta"
+  }
+```
+
 

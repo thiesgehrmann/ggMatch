@@ -5,6 +5,7 @@ SCRIPTDIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 configfile=""
 threads="10"
 sm_params=""
+validate=0
 
 function usage() {
 
@@ -15,18 +16,22 @@ function usage() {
   echo "Options"
   echo "  -t <int> : Number of threads to use (default: $threads)"
   echo "  -s <str> : Additional parameters for snakemake (default: \"\")"
+  echo "  -v :  Ony validate input. Don't run pipeline."
   echo ""
   echo " See code at https://github.com/thiesgehrmann/ggMatch"
 
 }
 
-while getopts ":t:s:" opt; do
+while getopts ":t:s:v" opt; do
   case $opt in
     t)
       threads=$OPTARG
       ;;
     s)
       sm_params="$OPTARG"
+      ;;
+    v)
+      validate=1
       ;;
     \?)
       echo "Invalid option: $OPTARG" >&2
@@ -50,6 +55,17 @@ if [ ! -e "$configfile" ]; then
   echo "Error: configFile missing"
   usage
   exit 1
-fi  
+fi
+
+$SCRIPTDIR/pipeline_components/checkInput.py "$configfile"
+
+if [ ! $? -eq 0 ]; then
+  echo "Aborting"
+  exit 1
+fi
+
+if [ $validate -eq 1 ]; then
+  exit 0
+fi
 
 snakemake --nolock --use-conda --snakefile "$SCRIPTDIR/Snakefile" --configfile "$configfile" --cores "$threads" matchedListToGraph compareToInitial
