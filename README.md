@@ -36,7 +36,17 @@ You can download and run the example dataset with the following commands:
 
 The tool outputs three files:
  * *outdir/run/compare/cmpTable.tsv* : A matrix of similarity scores to the original query for each species (-1 if absent)
+
+  This score is determined by the number of positive scoring matches in the alignment divided by the length of the query
+
  * *outdir/run/graph/nodes.tsv* : A file describing the genes in the discovery network (can be loaded with gephi or cytoscape)
+ Format:
+Id | query | label | iteration
+-- | ----- | ----- | ---------
+node1 | query3 | "QuerySet:182893" | 0
+node2 | query3 | "93_Amamu1:182893" | 1
+node3 | query3 | "92_Aspsy1:40389" | 1
+
  * *outdir/run/graph/edges.tsv* : A file describing the discovery order in the discovery network
 
 ### Running your own problem
