@@ -1,7 +1,8 @@
 # ggMatch
 Greedy Gene Matching tool.
 
-ggMatch finds reciprocal best blast/diamond hits across a large number of genomes, without having to do the dreaded all-vs-all blast.
+ggMatch finds reciprocal best blast/diamond hits across a large number of genomes, in an iterative fashion. 
+The iterative nature removes the need to do the dreaded all-vs-all blast between all genomes.
 The figure below shows an example gene matching process for a single gene against 298 fungal genomes extracted from the JGI.
 The black node represents the original query sequence, and edges between other nodes represent high quality reciprocal best blast hits.
 Each node color represents a different iteration.
@@ -11,6 +12,8 @@ In the first iteration, we discover the yellow genes, and in later iterations we
 
 ## Description of method
 
+COMING SOON
+
 ## Usage
 
 ### Dependencies
@@ -18,7 +21,7 @@ In the first iteration, we discover the yellow genes, and in later iterations we
  - Snakemake
  - Conda
 
-### Running the example
+### Getting started
 
 You can download and run the example dataset with the following commands:
 
@@ -69,7 +72,8 @@ For example:
 #### Defining a query
 
 A query takes the form of a multisequence fasta file.
-A simple query is a single sequence, but if you have pre-existing knowledge of another ortholog, you can provide two sequences in the same sequence file.
+A simple query is a single seed sequence, but if you have pre-existing knowledge of another ortholog, you can provide multiple seed sequences in the same query file.
+
 If the genomes from which these queries originate also exist in your genome, you can prefix the sequence description in the fasta file with "genomeID:".
 This will link the query sequence to the genome.
 If that query is identified as a match against any other genome, then the reciprocal blast will be performed against that genome, rather than the set of query sequences.
