@@ -48,8 +48,28 @@ Id | query | label | iteration
 node1 | query3 | "QuerySet:182893" | 0
 node2 | query3 | "93_Amamu1:182893" | 1
 node3 | query3 | "92_Aspsy1:40389" | 1
+node7 | query3 | "QUERY:query3" | -1
+node4 | query2 | "QuerySet:201797" | 0
+node5 | query2 | "93_Amamu1:201797" | 1
+node6 | query2 | "QUERY:query2" | -1
+node8 | query1 | "QUERY:query1" | -1
+node9 | query1 | "92_Aspsy1:61310" | 0
 
  * *outdir/run/graph/edges.tsv* : A file describing the discovery order in the discovery network
+
+Format:
+
+source | target | validated
+------ | ------ | ---------
+node1 | node2 | 1
+node1 | node3 | 1
+node7 | node1 | 1
+node4 | node5 | 1
+node6 | node4 | 1
+node8 | node9 | 1
+
+Loading the edges.tsv and nodes.tsv files into cytoscape produces the following network:
+![Discovery graph created by ggMatch for the example dataset](images/example.png)
 
 ### Running your own problem
 
