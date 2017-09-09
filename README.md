@@ -28,10 +28,6 @@ You can download and run the example dataset with the following commands:
   ./ggMatch example/config.json
 ```
 
-The --nolock argument is important, since I call a sub-instance of snakemake in the main snakemake file.
-
-The example is defined by the json file in (example/config.json).
-
 ### Output
 
 The tool outputs three files:
