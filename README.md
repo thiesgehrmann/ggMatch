@@ -7,6 +7,7 @@ The figure below shows an example gene matching process for a single gene agains
 The black node represents the original query sequence, and edges between other nodes represent high quality reciprocal best blast hits.
 Each node color represents a different iteration.
 In the first iteration, we discover the yellow genes, and in later iterations we discover other genes based on the newly discovered genes.
+A traditional reciprocal best hit search would have revealed only the yellow nodes in this network.
 
 ![Example gene graph created by ggMatch](images/process.png)
 
