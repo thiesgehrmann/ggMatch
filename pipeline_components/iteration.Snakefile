@@ -56,7 +56,7 @@ rule iterationFindBest:
     ml = { genome : set([ ":".join(g.target.split(":")[1:]) for g in group ]) for (genome, group) in mlGrouped }
 
     newml = []
-    for (genome, resFile) in zip(sorted([ g for g in config["prots"].keys() if g != "NoGenome"]), input.res):
+    for (genome, resFile) in zip(sorted([ g for g in config["prots"].keys() if g != config["querySetName"]]), input.res):
       bRes = butils.readBlastFile(resFile, butils.diamondfields)
         # Remove genes that have already been matched before
       bRes = [ h for h in bRes if (genome not in ml) or (h.sseqid not in ml[genome]) ]
@@ -157,7 +157,7 @@ rule verifyBestFound:
       bresOT = butils.bestHitPerQuery(bresOT)
       bresTO = butils.bestHitPerQuery(bresTO)
 
-      # 
+      # Full name
       bestForOrigin = targetGenome + ':' + ("" if originGene not in bresOT else bresOT[originGene].sseqid)
       bestForTarget = originGenome + ':' + ("" if targetGene not in bresTO else bresTO[targetGene].sseqid)
 
@@ -166,7 +166,7 @@ rule verifyBestFound:
       print("OT: %s -> %s" % (m.target, bestForOrigin))
       print("TO: %s -> %s" % (m.origin, bestForTarget))
 
-      if originGenome == "__INPUTQUERY__" or ((m.origin == bestForTarget) and (m.target == bestForOrigin)):
+      if originGenome == config["querySetName"] or ((m.origin == bestForTarget) and (m.target == bestForOrigin)):
         print(" YEEEEESSSS")
         filteredMatches.append((m.origin, m.target, True))
       else:

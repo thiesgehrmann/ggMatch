@@ -24,12 +24,26 @@ COMING SOON
 
 ### Getting started
 
+#### Simple example
+
 You can download and run the example dataset with the following commands:
 
 ```bash
   git clone https://github.com/thiesgehrmann/ggMatch.git
   cd ggMatch
-  ./ggMatch example/config.json
+  ./ggMatch examples/basic/config.json
+```
+
+#### Yeast Gene Order Browser example
+
+Also included is an example from the yeast gene order browser
+
+```bash
+  git clone https://github.com/thiesgehrmann/ggMatch.git
+  cd ggMatch/examples/ygob
+  ./prepare_ygob_example.sh
+  cd ../..
+  ./ggMatch examples/ygob/config.json
 ```
 
 ### Output
