@@ -5,3 +5,6 @@ dependencies:
  - diamond
  - graphviz
  - clustalo
+ - fasttree
+ - newick_utils
+ - icu=58.*

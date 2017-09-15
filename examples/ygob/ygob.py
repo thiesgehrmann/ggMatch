@@ -172,7 +172,8 @@ if __name__ == "__main__":
   F = loadFasta(fastaFile)
   J = { "genomes" : {},
         "queries" : {},
-        "outdir" : "./examples/ygob/output" }
+        "outdir" : "./examples/ygob/output",
+        "phylogeny_reference" :  "scere" }
 
   # Split the protein sequence file into different files
   for genome, prefix, name in genomes:

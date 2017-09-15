@@ -6,6 +6,7 @@ configfile=""
 threads="10"
 sm_params=""
 validate=0
+action="matchedListToGraph compareToInitial"
 
 function usage() {
 
@@ -16,19 +17,31 @@ function usage() {
   echo "Options"
   echo "  -t <int> : Number of threads to use (default: $threads)"
   echo "  -s <str> : Additional parameters for snakemake (default: \"\")"
-  echo "  -v :  Ony validate input. Don't run pipeline."
+  echo "  -a <str> : Snakemake action to perform (default \"$action\")"
+  echo "  -p : Create a phylogeny. Requires "phylogeny_reference" to be set in configFile".
+  echo "  -V : Perform a functional validation of the identified genes. Requires interproscan.sh to be in \$PATH."
+  echo "  -v : Ony validate input. Don't run pipeline."
   echo ""
   echo " See code at https://github.com/thiesgehrmann/ggMatch"
 
 }
 
-while getopts ":t:s:v" opt; do
+while getopts ":t:s:pVa:v" opt; do
   case $opt in
     t)
       threads=$OPTARG
       ;;
     s)
       sm_params="$OPTARG"
+      ;;
+    p)
+      action="phylogeny"
+      ;;
+    a)
+      action="$OPTARG"
+      ;;
+    V)
+      action="validate"
       ;;
     v)
       validate=1
@@ -57,7 +70,7 @@ if [ ! -e "$configfile" ]; then
   exit 1
 fi
 
-$SCRIPTDIR/pipeline_components/checkInput.py "$configfile"
+$SCRIPTDIR/pipeline_components/checkInput.py "$configfile" "$action"
 
 if [ ! $? -eq 0 ]; then
   echo "Aborting"
@@ -68,4 +81,6 @@ if [ $validate -eq 1 ]; then
   exit 0
 fi
 
-snakemake --nolock --use-conda --snakefile "$SCRIPTDIR/Snakefile" --configfile "$configfile" --cores "$threads" matchedListToGraph compareToInitial
+
+
+snakemake --nolock --use-conda --snakefile "$SCRIPTDIR/Snakefile" --configfile "$configfile" --cores "$threads" $sm_params $action

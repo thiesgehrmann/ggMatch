@@ -8,6 +8,14 @@ import utils as utils
 
 __INSTALL_DIR__ = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 
+if len(sys.argv) < 3:
+  print("Error, incomplete arguments to checkInput.py")
+  sys.exit(1)
+#fi
+
+configFile = sys.argv[1];
+action     = sys.argv[2];
+
 
 config = {}
 if not(os.path.isfile(sys.argv[1])):
@@ -69,6 +77,33 @@ if "outdir" not in config:
   warnings.append("Outdir is not specified. Defaulting to '%s'." % dconfig["outdir"])
 #fi
 
+if action == "phylogeny":
+  if "phylogeny_reference" not in config:
+    errors.append("Field \"phylogeny_reference\" is not defined in the configuration file.")
+  else:
+    if config["phylogeny_reference"] not in config["genomes"]:
+      errors.append("The phylogeny reference genome \"%s\" is not present in the list of genomes." % config["phylogeny_reference"])
+    #fi
+  #fi
+
+  if "phylogeny_outgroups" not in config:
+    warnings.append("No phylogenetic outgroup is defined in 'phylogeny_outgroups'. Will perform midpoint re-rooting.")
+  else:
+    for outgroup in config['phylogeny_outgroups'].split(' '):
+      if outgroup not in config["genomes"]:
+        error.append("Outgroup genome '%s' specified in 'phylogeny_outgroups' is not present in the list of genomes." % outgroup)
+      #fi
+    #efor
+  #fi
+#fi
+
+if action == "validate":
+  if utils.which("interproscan.sh") is None:
+    errors.append("`interproscan.sh` is not in $PATH. (PATH=%s)" % os.environ["PATH"])
+  #fi
+#fi
+
+
 
 for error in errors:
   print("ERROR: %s" % error)
@@ -78,4 +113,8 @@ for warning in warnings:
   print("WARNING: %s" % warning)
 #efor
 
+if len(errors) > 0:
+  sys.exit(1)
+#fi
 
+sys.exit(0)

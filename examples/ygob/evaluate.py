@@ -13,12 +13,18 @@ results = []
 
 def evaluate(genes, pillar):
 
-  overlap = len([ gene for (genome, gene) in [ ygob.splitgg(g) for g in genes ] if gene in pillar[genome] ])
+  overlap = [ gene for (genome, gene) in [ ygob.splitgg(g) for g in genes ] if gene in pillar[genome] ]
 
-  precision = overlap / float(len(genes))
-  recall    = overlap / float(len([ k for k in pillar if len(pillar[k]) > 0]))
+  print(genes)
+  print(overlap)
+  print(pillar)
+
+  precision = len(overlap) / float(len(genes))
+  recall    = len(overlap) / float(len([ k for k in pillar if len(pillar[k]) > 0]))
 
   f1 = 2 * (precision * recall) / (precision + recall)
+
+  #print(len(overlap), precision, recall, f1)
 
   return (precision, recall, f1)
 
@@ -30,8 +36,10 @@ for query in J["queries"]:
 
   F = ygob.loadFasta(finalFile)
 
-  results.append(evaluate(F.keys(), queryPillar))
-  print(results[-1])
+
+  evaluation = evaluate(F.keys(), queryPillar)
+  results.append(evaluation)
+  print(query, evaluation)
 #efor
 
 results = np.matrix(results)

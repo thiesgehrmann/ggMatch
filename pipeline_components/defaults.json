@@ -1,5 +1,10 @@
 {
   "querySetName" : "QuerySet",
   "evalue" : "1e-50",
-  "outdir" : "./output"
+  "outdir" : "./output",
+  "phylogeny_reference" : "",
+  "phylogeny_max_genes" : 500,
+  "phylogeny_min_prevalence" : 95.0,
+  "fasttree_params" : "-fastest -gtr",
+  "phylogeny_outgroups": ""
 }

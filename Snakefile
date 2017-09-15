@@ -1,3 +1,5 @@
+
+import random
 import inspect, os
 __INSTALL_DIR__ = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 __PC_DIR__ = "%s/pipeline_components" % __INSTALL_DIR__
@@ -24,6 +26,8 @@ __FINAL_OUTDIR__ = "%s/final"% __RUN_DIR__
 __GRAPH_OUTDIR__ = "%s/graph" % __RUN_DIR__
 __CLUSTALO_OUTDIR__ = "%s/alignment" % __RUN_DIR__
 __COMPARE_OUTPUT__ = "%s/compare" % __RUN_DIR__
+__PHYLO_OUTPUT__ = "%s/phylogeny" % __RUN_DIR__
+__RECIPROCALBLAST_OUTPUT__ = "%s/reciprocalBlasts" % __RUN_DIR__
 
 ###############################################################################
 
@@ -86,7 +90,7 @@ rule genIterationJSON:
           "queryName" : wildcards.query,
           "iteration" : int(wildcards.iteration),
           "queries" : input.queries,
-          "reciprocalDir" : "%s/reciprocalBlasts" % __ITERATION_OUTDIR__,
+          "reciprocalDir" : __RECIPROCALBLAST_OUTPUT__,
           "outdir" : "%s/%s/iteration_%d.run" % ( __ITERATION_OUTDIR__, query, iteration),
           "final" : "%s/%s/iteration_%d.fasta" % ( __ITERATION_OUTDIR__, query, iteration),
           "matchedList" : "%s/allMatched.tsv" % (__ITERATION_OUTDIR__),
@@ -313,7 +317,175 @@ rule compareToInitial:
       #efor
     #ewith
           
-          
 
-      
-    
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+
+
+rule makeJSONForReciprocalBlastPhylogeny:
+  input:
+    db    = expand("%s/{genome}.blastdb" % (__BLASTDB_OUTDIR__), genome=config["genomes"].keys()),
+    prots = [ config["genomes"][genome]["prots"] for genome in config["genomes"].keys() ]
+  output:
+    json = "%s/recipBlast.json" % __PHYLO_OUTPUT__
+  run:
+    rbJson = { "args" : {},
+               "reciprocalDir" : __RECIPROCALBLAST_OUTPUT__,
+               "final" : "%s/reciprocalList.tsv" % __PHYLO_OUTPUT__,
+               "evalue" : dconfig["evalue"] }
+
+    referenceBlastDB = "%s/%s.blastdb" % (__BLASTDB_OUTDIR__, config["phylogeny_reference"])
+    referenceProts = dconfig["genomes"][dconfig["phylogeny_reference"]]["prots"]
+    for genome in dconfig["genomes"]:
+      if genome in [ dconfig["phylogeny_reference"], dconfig["querySetName"] ]:
+        continue
+      #fi
+      targetBlastDB = "%s/%s.blastdb" % (__BLASTDB_OUTDIR__, genome)
+      targetProts   = dconfig["genomes"][genome]["prots"]
+
+      rbJson["args"]["%s:%s" % (dconfig["phylogeny_reference"], genome)] = { "query" : referenceProts, "db": targetBlastDB }
+      rbJson["args"]["%s:%s" % (genome, dconfig["phylogeny_reference"])] = { "query" : targetProts, "db": referenceBlastDB }
+    #efor
+
+    with open(output.json, "w") as ofd:
+      ofd.write(json.dumps(rbJson, indent=4))
+    #ewith
+
+rule runReciprocalBlastPhylogeny:
+  input:
+    json = rules.makeJSONForReciprocalBlastPhylogeny.output.json
+  output:
+    reciprocalList = "%s/reciprocalList.tsv" % __PHYLO_OUTPUT__
+  threads: 99
+  params:
+    pc_dir = __PC_DIR__
+  shell: """
+    {params.pc_dir}/run_reciprocal_blast.sh "{input.json}" {threads} #&> /dev/null
+  """
+
+rule makeJSONForClustalo:
+  input:
+    reciprocalList = rules.runReciprocalBlastPhylogeny.output.reciprocalList
+  output:
+    json = "%s/clustalo.json"% __PHYLO_OUTPUT__
+  run:
+    recipBlastFiles = dict([ (r.genomepair, r.file) for r in utils.readColumnFile(input.reciprocalList, "genomepair file")])
+    refProts = utils.loadFasta(config["genomes"][dconfig["phylogeny_reference"]]["prots"])
+
+    matches = { genome: {} for genome in dconfig["genomes"] if genome != dconfig["querySetName"] }
+    matches[dconfig["phylogeny_reference"]] = { gene : gene for gene in refProts }
+
+    for genome in dconfig["genomes"]:
+      if genome in [ dconfig["phylogeny_reference"], dconfig["querySetName"] ]:
+        continue
+      #fi
+      refValt = butils.bestHitPerQuery(butils.readBlastFile(recipBlastFiles["%s:%s" % (config["phylogeny_reference"], genome)], butils.diamondfields))
+      altVref = butils.bestHitPerQuery(butils.readBlastFile(recipBlastFiles["%s:%s" % (genome, config["phylogeny_reference"])], butils.diamondfields))
+
+      for seq in refProts:
+        bhSeq   = refValt[seq].sseqid if seq in refValt else "__NOMATCH"
+        bhrecip = altVref[bhSeq].sseqid if bhSeq in altVref else "__NOMATCH"
+
+        if bhrecip == seq:
+          matches[genome][seq] = bhSeq
+        #fi
+      #efor
+
+      # Find out how many genomes each gene is present in
+    geneGenomeCounts = {}
+    for gene in refProts:
+      geneGenomeCounts[gene] = len([ genome for genome in dconfig["genomes"] if (genome != dconfig["querySetName"]) and (gene in matches[genome]) ])
+    #efor
+
+    # Select genes present in at least dconfig["phylogeny_min_prevalence"] % genomes
+    selected = []
+    for gene in refProts:
+      prevalence = (float(geneGenomeCounts[gene]) / float(len(dconfig["genomes"]) -1)) * 100.0
+      if prevalence >= (dconfig["phylogeny_min_prevalence"]) :
+        selected.append(gene)
+      #fi
+    #efor
+
+    print("Found %d genes present in atleast %.1f genomes. Will select top %d (based on number of genomes it was found in)." % (len(selected), dconfig["phylogeny_min_prevalence"],  min(len(selected), dconfig["phylogeny_max_genes"]) ))
+    print("If you want to change this behaviour, change 'phylogeny_max_genes', and 'phylogeny_min_prevalence' in config.")
+
+    J = { "outdir" : __PHYLO_OUTPUT__,
+          "args" : {},
+          "final" : rules.alignPhylogeny.output.aln,
+          "genomes" : [ g for g in dconfig["genomes"].keys() if g != dconfig["querySetName"] ]
+        }
+
+    otherProts = { genome : utils.loadFasta(config["genomes"][genome]["prots"]) for genome in matches }
+    for gene in sorted(selected, key=lambda x: geneGenomeCounts[x], reverse=True):
+      utils.writeFasta([ (genome, otherProts[genome][matches[genome][gene]]) for genome in sorted(matches.keys()) if (gene in matches[genome]) ], "%s/%s.fasta" % (__PHYLO_OUTPUT__, gene))
+      J["args"][gene] = "%s/%s.fasta" % (__PHYLO_OUTPUT__, gene)
+    #efor
+
+    with open(output.json, "w") as ofd:
+      ofd.write(json.dumps(J, indent=4))
+    #ewith
+          
+rule alignPhylogeny:
+  input:
+    json = rules.makeJSONForClustalo.output.json
+  output:
+    aln = "%s/allAligned.fasta" % __PHYLO_OUTPUT__
+  threads: 99
+  params:
+    pc_dir = __PC_DIR__
+  shell: """
+    {params.pc_dir}/run_clustalo_aligner.sh "{input.json}" {threads} #&> /dev/null
+  """
+
+rule fastTreePhylogeny:
+  input:
+    aln = rules.alignPhylogeny.output.aln
+  output:
+    newick = "%s/phylogeny.newick" % __PHYLO_OUTPUT__
+  threads: 99
+  params:
+    fasttreeParams = dconfig["fasttree_params"]
+  conda: "%s/conda.yaml" % __PC_DIR__
+  shell: """
+    export OMP_NUM_THREADS={threads}
+    FastTree {params.fasttreeParams} < "{input.aln}" > {output.newick}
+  """
+
+rule rerootedPhylogeny:
+  input:
+    newick = rules.fastTreePhylogeny.output.newick
+  output:
+    newick = "%s/pyhlogeny.rerooted.newick" % __PHYLO_OUTPUT__
+  params:
+    outgroups = dconfig["phylogeny_outgroups"]
+  conda: "%s/conda.yaml" % __PC_DIR__
+  shell: """
+    nw_reroot "{input.newick}" {params.outgroups} > "{output.newick}"
+  """
+rule phylogeny: 
+  input:
+    newick = rules.rerootedPhylogeny.output.newick
+
+###############################################################################
+###############################################################################
+###############################################################################
+
+rule interproScan:
+  input:
+    final = lambda wildcards: "%s/%s.fasta" % (__FINAL_OUTDIR__, wildcards.query)
+  output:
+    annot = "%s/ipr.{query}.tsv" % __VALIDATION_OUTDIR__
+  shell: """
+    cat {input.final} \
+     | tr -d '*' \
+     > {output.annot}.input
+    interproscan.sh -appl Pfam -f TSV --goterms --iprlookup -i {output.annot}.input -o {output.annot}
+  """
+
+rule validationScores:
+
+rule validate:
+  input:
+    scores = rules.validationScores.output.scores
