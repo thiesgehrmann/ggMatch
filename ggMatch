@@ -81,6 +81,9 @@ if [ $validate -eq 1 ]; then
   exit 0
 fi
 
-
+logAction=`echo $action | tr ' ' ','`
+md5sum=`md5sum "$configfile" | cut -d\   -f1`
+logfile="./ggMatch.$action.$md5sum.log"
 
 snakemake --nolock --use-conda --snakefile "$SCRIPTDIR/Snakefile" --configfile "$configfile" --cores "$threads" $sm_params $action
+

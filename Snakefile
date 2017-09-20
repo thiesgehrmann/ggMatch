@@ -28,12 +28,13 @@ __CLUSTALO_OUTDIR__ = "%s/alignment" % __RUN_DIR__
 __COMPARE_OUTPUT__ = "%s/compare" % __RUN_DIR__
 __PHYLO_OUTPUT__ = "%s/phylogeny" % __RUN_DIR__
 __RECIPROCALBLAST_OUTPUT__ = "%s/reciprocalBlasts" % __RUN_DIR__
+__VALIDATION_OUTDIR__ = "%s/validation" % __RUN_DIR__
 
 ###############################################################################
 
 querySetProts = "%s/querySet.fasta" % __ITERATION_OUTDIR__
 
-dconfig["genomes"][dconfig["querySetName"]] = {"prots" : querySetProts }
+dconfig["genomes"][dconfig["querySetName"]] = { "prots" : querySetProts }
 
 ###############################################################################
 
@@ -158,7 +159,7 @@ rule runIteration:
     if [ "$need_next" == "false" ]; then
       ln -s "{input.prevQuery}" "{output.nextQuery}"
     else
-      {params.pc_dir}/run_iteration.sh {input.json} {threads}
+      {params.pc_dir}/run_iteration.sh {input.json} {threads} > /dev/null
     fi
   """
     
@@ -168,8 +169,8 @@ rule runIteration:
 
 rule moveFinal:
   input:
-    groups = lambda wildcards: expand("%s/%s/iteration_{iteration}.fasta" % (__ITERATION_OUTDIR__, wildcards.query), iteration=[ str(x) for x in range(1,10)]),
-    lastIter = lambda wildcards: "%s/%s/iteration_9.fasta" % (__ITERATION_OUTDIR__, wildcards.query),
+    groups = lambda wildcards: expand("%s/%s/iteration_{iteration}.fasta" % (__ITERATION_OUTDIR__, wildcards.query), iteration=[ str(x) for x in range(1,dconfig["max_iterations"])]),
+    lastIter = lambda wildcards: "%s/%s/iteration_%d.fasta" % (__ITERATION_OUTDIR__, wildcards.query, dconfig["max_iterations"]-1),
   output:
     finalLoc = "%s/{query}.fasta" % (__FINAL_OUTDIR__),
   run:
@@ -472,20 +473,275 @@ rule phylogeny:
 ###############################################################################
 ###############################################################################
 
-rule interproScan:
+#     1  149_Ascsa1:149_Ascsa1|4785
+#     2  e03ea43b0cfb2e7ff623bc050d3ac750
+#     3  194
+#     4  Pfam
+#     5  PF00071
+#     6  Ras family
+#     7  7
+#     8  177
+#     9  8.4E-53
+#    10  T
+#    11  15-09-2017
+#    12  IPR001806
+#    13  Small GTPase superfamily
+
+rule interproscan_initial:
   input:
-    final = lambda wildcards: "%s/%s.fasta" % (__FINAL_OUTDIR__, wildcards.query)
+    final = lambda wildcards: dconfig["queries"][wildcards.query]
   output:
-    annot = "%s/ipr.{query}.tsv" % __VALIDATION_OUTDIR__
+    annot = "%s/ipr.initial.{query}.tsv" % __VALIDATION_OUTDIR__
   shell: """
     cat {input.final} \
      | tr -d '*' \
      > {output.annot}.input
-    interproscan.sh -appl Pfam -f TSV --goterms --iprlookup -i {output.annot}.input -o {output.annot}
+    interproscan.sh -appl Pfam -f TSV --iprlookup -i {output.annot}.input -o {output.annot}
   """
 
+rule interproscan_final:
+  input:
+    final = lambda wildcards: "%s/%s.fasta" % (__FINAL_OUTDIR__, wildcards.query)
+  output:
+    annot = "%s/ipr.final.{query}.tsv" % __VALIDATION_OUTDIR__
+  shell: """
+    cat {input.final} \
+     | tr -d '*' \
+     > {output.annot}.input
+    interproscan.sh -appl Pfam -f TSV --iprlookup -i {output.annot}.input -o {output.annot}
+  """
+
+rule validationScorePerGene:
+  input:
+    iAnnots = expand("%s/ipr.initial.{query}.tsv" % __VALIDATION_OUTDIR__, query=sorted(dconfig["queries"].keys())),
+    fAnnots = expand("%s/ipr.final.{query}.tsv" % __VALIDATION_OUTDIR__, query=sorted(dconfig["queries"].keys())),
+    final  = expand("%s/{query}.fasta" % __FINAL_OUTDIR__, query=sorted(dconfig["queries"].keys()))
+  output:
+    scores = "%s/geneScores.tsv" % __VALIDATION_OUTDIR__
+  run:
+    C = {}
+    for query, iAnnotFile, fAnnotFile in zip(sorted(dconfig["queries"].keys()), input.iAnnots, input.fAnnots):
+      initialAnnots = set([ a.signatureid for a in utils.readColumnFile(iAnnotFile, "seqid hash seqlen analysis signatureid signaturedesc start stop score status date iprid iprdesc") ])
+      finalAnnots = utils.readColumnFile(fAnnotFile, "seqid hash seqlen analysis signatureid signaturedesc start stop score status date iprid iprdesc")
+
+      for a in finalAnnots:
+        if (query, a.seqid) not in C:
+          C[(query, a.seqid)] = [ initialAnnots, set([]) ]
+        #fi
+        initial, final = C[(query, a.seqid)]
+        final.add(a.signatureid)
+
+      #efor
+    #efor
+
+    for query, seqFile in zip(sorted(dconfig["queries"].keys()), input.final):
+      seqs = utils.loadFasta(seqFile)
+      for seq in seqs:
+        if (query, seq) not in C:
+          C[(query, seq)] = [ set([]), set([]) ]
+        #fi
+      #efor
+    #efor
+        
+ 
+    with open(output.scores, "w") as ofd:
+      for (query, geneid) in C:
+        initial, final = C[(query, geneid)]
+        nInitial = len(initial)
+        nOverlap = len(initial & final)
+        ofd.write("%s\t%s\t%d\t%d\t%d\t%f\n" % (query, geneid, nInitial, len(final), nOverlap, ( nOverlap / float(nInitial) ) if nInitial > 0 else 1) )
+      #efor
+    #ewith
+
 rule validationScores:
+  input:
+    iAnnots = expand("%s/ipr.initial.{query}.tsv" % __VALIDATION_OUTDIR__, query=sorted(dconfig["queries"].keys())),
+    fAnnots = expand("%s/ipr.final.{query}.tsv" % __VALIDATION_OUTDIR__, query=sorted(dconfig["queries"].keys())),
+    final  = expand("%s/{query}.fasta" % __FINAL_OUTDIR__, query=sorted(dconfig["queries"].keys()))
+  output:
+    valTable = "%s/validation.tsv" % __VALIDATION_OUTDIR__,
+    valTableTrans = "%s/validation.trans.tsv" % __VALIDATION_OUTDIR__
+  run:
+    import statistics
+    S = { "NGenes" : "Number of genes", "NAnnots" : "Number of annotations", "Average" : "Average", "Maximum" : "Maximum", "Minimum" : "Minimum", "Median" : "Median" }
+    A = { query : { seqid : [] for seqid in utils.loadFasta(final) } for (query, final) in zip(sorted(dconfig["queries"]), input.final) }
+    for query, iAnnotFile, fAnnotFile in zip(sorted(dconfig["queries"].keys()), input.iAnnots, input.fAnnots):
+      initialAnnot = utils.readColumnFile(iAnnotFile, "seqid hash seqlen analysis signatureid signaturedesc start stop score status date iprid iprdesc")
+      finalAnnot = utils.readColumnFile(fAnnotFile, "seqid hash seqlen analysis signatureid signaturedesc start stop score status date iprid iprdesc")
+      relAnnots = set([ a.signatureid for a in initialAnnot ])
+      for a in finalAnnot:
+        if a.signatureid not in relAnnots:
+          continue
+        #fi
+        A[query][a.seqid].append(a.signatureid)
+        if a.signatureid not in S:
+          S[a.signatureid] = a.signaturedesc
+        #fi
+      #efor
+    #efor
+
+    V = {}
+    for query in A:
+      nseq = float(len(A[query].keys()))
+      counts = []
+      for sig in S:
+        nSigQA = sum([ 1 if sig in A[query][seqid] else 0 for seqid in A[query] ])
+        V[(query, sig)] = -1 if nSigQA == 0 else 100*(nSigQA / nseq)
+        if nSigQA > 0:
+          counts.append(V[(query, sig)])
+        #fi
+      #efor
+      V[(query, "NGenes")] = len(A[query].keys())
+      V[(query, "NAnnots")] = len(counts)
+      V[(query, "Average")] = statistics.mean(counts) if len(counts) > 0 else 100
+      V[(query, "Maximum")] = max(counts) if len(counts) > 0 else 100
+      V[(query, "Minimum")] = min(counts) if len(counts) > 0 else 100
+      V[(query, "Median")] = statistics.median(counts) if len(counts) > 0 else 100
+    #efor
+
+    with open(output.valTable, "w") as ofd:
+      ofd.write("Annotation\tDescription\t%s\n" % "\t".join(sorted(dconfig["queries"].keys())))
+      for annot in S.keys():
+        ofd.write("%s\t%s\t%s\n" % (annot, S[annot], "\t".join([ "%.0f" % V[(query, annot)] for query in sorted(dconfig["queries"].keys()) ]) ))
+      #efor
+    #ewith
+
+    with open(output.valTableTrans, "w") as ofd:
+      keyS = S.keys()
+      ofd.write("Query\t%s\n" % "\t".join(keyS))
+      ofd.write("\t%s\n" % "\t".join([ S[s] for s in keyS]))
+      for query in sorted(dconfig["queries"].keys()):
+        ofd.write("%s\t%s\n" % (query, "\t".join([ "%.0f" % V[(query, annot)] for annot in keyS])) )
+      #efor
+    #ewith
+
+rule filterBasedOnValidation:
+  input:
+    scores = rules.validationScorePerGene.output.scores,
+    final = rules.final.input.final,
+    cmpTable = rules.compareToInitial.output.cmpTable,
+    nodesCSV = rules.matchedListToGraph.output.nodesCSV
+  output:
+    cmpTable = "%s/validated.cmpTable.tsv"% __VALIDATION_OUTDIR__,
+    nodesCSV = "%s/validated.nodes.tsv" % __VALIDATION_OUTDIR__,
+    removed  = "%s/validated.removed.tsv" % __VALIDATION_OUTDIR__
+  run:
+    ml = utils.indexListBy(utils.readColumnFile("%s/allMatched.tsv" % __ITERATION_OUTDIR__, "query iteration origin target keep", types="str int str str int"), lambda x: x.iteration)
+    vScore = utils.indexListBy(utils.readColumnFile(input.scores, "query geneid ninitial nfinal noverlap score", types="str str int int int float"), lambda x: x.geneid)
+
+    selected = { m.origin: m.query for m in ml[0] }
+    removed = {}
+    for iteration in range(max([ int(k) for k in ml.keys()]) + 1):
+      for m in ml[iteration]:
+        if m.keep < 1:
+          continue
+        elif m.target not in vScore:
+          selected[m.target] = m.query
+        elif (dconfig["validation_filter_strategy"] == "min_score") and (vScore[m.target][0].score > dconfig["validation_filter_min_score"]):
+          selected[m.target] = m.query
+        elif m.origin not in selected:
+          removed[m.query] = removed.get(m.query,[]) + [ m.target ]
+          continue
+        elif (dconfig["validation_filter_strategy"] == "min_score_along_graph") and (vScore[m.target][0].score > dconfig["validation_filter_min_score"]):
+          selected[m.target] = m.query
+        else:
+          removed[m.query] = removed.get(m.query,[]) + [ m.target ]
+        #fi
+      #efor
+    #efor
+
+    with open(output.removed, "w") as ofd:
+      for query in removed:
+        for gene in removed[query]:
+          ofd.write("%s\t%s\n"% (query, gene))
+        #efor
+      #efor
+    #ewith
+
+    querySpecies = { query: set([]) for query in dconfig["queries"] }
+    for s in selected:
+      genome, gene = utils.splitgg(s)
+      querySpecies[selected[s]].add(genome)
+    #efor
+      
+
+    queries = sorted(dconfig["queries"].keys())
+    with open(input.cmpTable, "r") as ifd:
+      with open(output.cmpTable, "w") as ofd:
+        for line in ifd:
+          line = line.rstrip().split('\t')
+          if line[0] == 'Genome':
+            ofd.write('\t'.join(line) + '\n')
+          else:
+            genome = line[0]
+            newLine = [ line[0] ]
+            for query, qual in zip(queries, line[1:]):
+              if genome not in querySpecies[query]:
+                if qual == "-1":
+                  newLine.append(qual)
+                else:
+                  newLine.append('-' + qual)
+                #fi
+                #print("I remove %s from query %s" % (genome, query))
+              else:
+                newLine.append(qual)
+              #fi
+            #efor
+            ofd.write('\t'.join(newLine) + '\n')
+          #fi
+        #efor
+      #ewith
+    #ewith
+
+    nodes = utils.readColumnFile(input.nodesCSV, "id query label iteration", delimiter = ',', types="str str str int", skip=1)
+    with open(output.nodesCSV, "w") as ofd:
+      ofd.write("Id,query,label,iteration,removed,vscore\n")
+      for node in nodes:
+        rm = 0
+        if node.label in removed.get(node.query, []):
+          rm = 1
+        #fi
+        ofd.write("%s,%s,%s,%d,%d,%f\n" % (node.id, node.query, node.label, node.iteration, rm, vScore[node.label][0].score if node.label in vScore else 0.0))
+      #efor
+    #ewith
+
+rule itolAnnotPerQuery:
+  input:
+    cmpTable = rules.filterBasedOnValidation.output.cmpTable,
+    template = "%s/raw_itol_colored_gradients.txt" % __PC_DIR__
+  output:
+    itol = "%s/validated_itol/itol.{query}.txt" % __PHYLO_OUTPUT__
+  run:
+    queries = sorted(dconfig["queries"].keys())
+    idx = queries.index(wildcards.query)
+    data = []
+    with open(input.cmpTable, "r") as ifd:
+      for line in ifd:
+        line = line.rstrip().split('\t')
+        if line[0] == 'Genome':
+          continue
+        else:
+          genome = line[0]
+          qscore = int(line[1+idx])
+          data.append("%s %d" % (genome, 0 if qscore < 0 else qscore))
+        #fi
+      #efor
+    #ewith
+
+    with open(input.template, "r") as tfd:
+      tContent = tfd.read()
+      with open(output.itol, "w") as ofd:
+        ofd.write(tContent % (wildcards.query, "\n".join(data)))
+      #ewith
+    #ewith
+    #
+
+rule itolAnnot:
+  input:
+    annot = expand("%s/validated_itol/itol.{query}.txt"% __PHYLO_OUTPUT__, query=dconfig["queries"].keys())
 
 rule validate:
   input:
-    scores = rules.validationScores.output.scores
+    scores = rules.validationScores.output.valTable,
+    filt   = rules.filterBasedOnValidation.output.cmpTable,
+    itolannot = rules.itolAnnot.input.annot

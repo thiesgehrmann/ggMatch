@@ -21,6 +21,7 @@ COMING SOON
 
  - Snakemake
  - Conda
+ - Interproscan (optional)
 
 ### Getting started
 

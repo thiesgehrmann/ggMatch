@@ -1,10 +1,18 @@
 {
+  "max_iterations" : 10,
+
   "querySetName" : "QuerySet",
   "evalue" : "1e-50",
   "outdir" : "./output",
+
   "phylogeny_reference" : "",
   "phylogeny_max_genes" : 500,
   "phylogeny_min_prevalence" : 95.0,
   "fasttree_params" : "-fastest -gtr",
-  "phylogeny_outgroups": ""
+  "phylogeny_outgroups": "",
+
+  "interproscan_pval" : 0.05,
+  "validation_filter_strategy" : "min_score",
+  "validation_filter_strategy_options" : [ "min_score_along_graph", "min_score" ],
+  "validation_filter_min_score": 0.0
 }
